@@ -25,6 +25,27 @@ the same moment.
 - **Web app** (`web/`). A scoreboard, candles and volume (TradingView Lightweight Charts) with a
   marker on every play, the play-by-play feed, replay controls, and a banner for big moments.
 
+## Slice 2: every play is a conversation
+
+- **Reactions:** one tap (🔥 🚀 📉 😱 🤡 💀) on every play, synced live to everyone in the room.
+- **Threads:** each play has its own comment thread (300 characters, newest first).
+- **Stance and price stamp on every comment:**
+  - every comment carries a long, short, flat or no-position tag;
+  - the **server** stamps it with the room's clock and price when it's posted (the client can't set it);
+  - long and short calls then show how they've done since: "Long call −4.06% since." That's the
+    honest scoreboard, applied the same way to everyone.
+- **Presence:** "N here" in the scoreboard.
+- **Moderation from day one:**
+  - links are blocked, and so are scam pitches ("dm me", "guaranteed", "100x") and slurs;
+  - new names start in slow mode (10 s between comments for the first two minutes, then 3 s, and at
+    most 6 a minute);
+  - three reports from different people hide a comment;
+  - mute works per browser.
+- **Identity:** a display name and a random id kept in the browser. No accounts yet. Comments never
+  feed the move rating.
+- Reactions and comments live in memory (`server/social.ts`) behind a small interface, ready for a
+  database.
+
 ## Run it
 
 ```bash
@@ -80,8 +101,7 @@ tests/       engine tests on synthetic tapes
 
 ## Next slices
 
-1. **Social layer:** reactions and a thread on every play, long/short/flat tags, and calls stamped
-   with the live price.
+1. ~~Social layer~~ (done in slice 2). Next comes persistence: SQLite, then real accounts.
 2. **Earnings-night rooms from the calendar:** free "beat or miss?" predictions (points only) and
    shareable box-score cards.
 3. **Opening it up:** licensed real-time data for other users, accounts, moderation, then a phone app.

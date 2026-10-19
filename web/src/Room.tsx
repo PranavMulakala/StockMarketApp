@@ -5,6 +5,7 @@ import { Chart } from './Chart';
 import { ReplayControls } from './Controls';
 import { Feed } from './Feed';
 import { clockSec, longDate, money, signedPct } from './fmt';
+import { Thread } from './Thread';
 import { useRoom } from './useRoom';
 
 const SESSION = { pre: 'Pre-market', regular: 'Market open', post: 'After hours', closed: 'Market closed', always: '24/7' };
@@ -18,8 +19,15 @@ function useTick(ms: number) {
 }
 
 export function Room({ id }: { id: string }) {
-  const { state, control } = useRoom(id);
+  const api = useRoom(id);
+  const { state, control, identity } = api;
   const [focus, setFocus] = useState<Play | null>(null);
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const threadPlay = threadId ? state.plays.find((p) => p.id === threadId) : undefined;
+  const openThread = (playId: string) => {
+    setThreadId(playId);
+    api.openThread(playId);
+  };
   const [momentId, setMomentId] = useState<string | null>(null);
   useTick(250);
 
@@ -80,11 +88,38 @@ export function Room({ id }: { id: string }) {
               )}
             </section>
             <aside className="right">
-              <div className="feed-head">
-                <span>Play-by-play</span>
-                <span className="count">{state.plays.length} plays</span>
-              </div>
-              <Feed plays={state.plays} lastPlayId={state.lastPlayId} onSelect={setFocus} />
+              {threadPlay ? (
+                <Thread
+                  play={threadPlay}
+                  social={state.social[threadPlay.id]}
+                  comments={state.threads[threadPlay.id]}
+                  me={identity.userId}
+                  name={identity.name}
+                  price={state.price}
+                  rejected={state.rejected}
+                  onBack={() => setThreadId(null)}
+                  onReact={api.react}
+                  onComment={(text, stance) => api.comment(threadPlay.id, text, stance)}
+                  onReport={api.report}
+                  onSetName={api.setName}
+                />
+              ) : (
+                <>
+                  <div className="feed-head">
+                    <span>Play-by-play</span>
+                    <span className="count">{state.plays.length} plays</span>
+                  </div>
+                  <Feed
+                    plays={state.plays}
+                    lastPlayId={state.lastPlayId}
+                    social={state.social}
+                    me={identity.userId}
+                    onSelect={setFocus}
+                    onReact={api.react}
+                    onOpen={openThread}
+                  />
+                </>
+              )}
             </aside>
           </main>
           <footer className="fine">
@@ -156,7 +191,9 @@ function Scoreboard({
           </span>
         )}
         <div className="time">{clockSec(clock)} ET</div>
-        <div className="session">{session}</div>
+        <div className="session">
+          {session} · {state.here} here
+        </div>
       </div>
     </section>
   );

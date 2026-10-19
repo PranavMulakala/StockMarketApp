@@ -3,6 +3,8 @@ import { PlayEngine, type Bar, type EngineEvent, type Play } from '../engine';
 import { loadDay } from './data';
 import { CoinbaseFeed } from './coinbase';
 import { finalPlays, loadScenarios, timelineFor, type Scenario, type Timeline } from './replay';
+import { cleanName } from './moderation';
+import { SocialStore, type Stamp } from './social';
 import {
   SPEEDS,
   type ClientMsg,
@@ -19,18 +21,23 @@ const MIN = 60_000;
 export interface Client {
   ws: WebSocket;
   room?: Room;
+  userId?: string;
+  name?: string | null;
 }
 
 function send(ws: WebSocket, msg: ServerMsg) {
   if (ws.readyState === 1) ws.send(JSON.stringify(msg));
 }
 
+type SocialClientMsg = Extract<ClientMsg, { type: 'react' | 'comment' | 'thread' | 'report' }>;
+
 /**
- * A room is one "game": everyone in it sees the same price, the same plays, at the same moment.
- * That shared clock is what the comments will hang on in the next slice.
+ * A room is one "game": everyone in it sees the same price, the same plays, at the same moment, and
+ * every play is its own conversation hung on that shared clock.
  */
 export abstract class Room {
   readonly clients = new Set<Client>();
+  readonly social = new SocialStore();
 
   constructor(readonly meta: RoomMeta) {}
 
@@ -38,18 +45,58 @@ export abstract class Room {
     this.clients.add(c);
     c.room = this;
     send(c.ws, this.snapshot());
+    send(c.ws, { type: 'social', plays: this.social.all(), here: this.clients.size });
+    this.broadcast({ type: 'presence', here: this.clients.size });
     this.onJoin();
   }
 
   leave(c: Client) {
     this.clients.delete(c);
     if (c.room === this) c.room = undefined;
+    this.broadcast({ type: 'presence', here: this.clients.size });
     if (!this.clients.size) this.onEmpty();
   }
 
   broadcast(msg: ServerMsg) {
     const s = JSON.stringify(msg);
     for (const c of this.clients) if (c.ws.readyState === 1) c.ws.send(s);
+  }
+
+  /** The room's clock and price right now: what every comment is stamped with. */
+  abstract stamp(): Stamp;
+  /** Whether a play exists in this room (people can only react to real plays). */
+  abstract hasPlay(id: string): boolean;
+
+  handleSocial(c: Client, msg: SocialClientMsg) {
+    if (!c.userId) return send(c.ws, { type: 'rejected', reason: 'Still connecting. Try again in a second.' });
+    if (msg.type === 'report') {
+      const hidden = this.social.report(msg.commentId, c.userId);
+      if (hidden) {
+        this.broadcast({
+          type: 'hidden',
+          playId: hidden.playId,
+          commentId: hidden.id,
+          social: this.social.social(hidden.playId),
+        });
+      }
+      return;
+    }
+    if (!this.hasPlay(msg.playId)) return send(c.ws, { type: 'rejected', reason: 'That play is not in this room.' });
+    if (msg.type === 'thread') {
+      return send(c.ws, { type: 'thread', playId: msg.playId, comments: this.social.thread(msg.playId) });
+    }
+    if (msg.type === 'react') {
+      const social = this.social.react(msg.playId, c.userId, msg.reaction);
+      if (social) this.broadcast({ type: 'reacted', playId: msg.playId, social });
+      return;
+    }
+    if (!c.name) return send(c.ws, { type: 'rejected', reason: 'Pick a display name first.' });
+    const posted = this.social.comment(
+      { playId: msg.playId, userId: c.userId, name: c.name, text: msg.text, stance: msg.stance },
+      this.stamp(),
+    );
+    if (!posted.ok) return send(c.ws, { type: 'rejected', reason: posted.reason });
+    this.broadcast({ type: 'comment', comment: posted.comment, social: this.social.social(msg.playId) });
   }
 
   abstract snapshot(): SnapshotMsg;
@@ -71,9 +118,22 @@ export class ReplayRoom extends Room {
   private lastReal = 0;
   private started = false;
   private marks: { t: number; rating: number }[] | null = null;
+  private price: number | null = null;
+  private playIds: Set<string> | null = null;
 
   constructor(private readonly sc: Scenario) {
     super(replayMeta(sc));
+  }
+
+  stamp(): Stamp {
+    return { t: this.simTime, price: this.price };
+  }
+
+  hasPlay(id: string): boolean {
+    const tl = this.timeline();
+    if (!tl) return false;
+    this.playIds ??= new Set(tl.frames.flatMap((f) => f.events.map((e) => e.play.id)));
+    return this.playIds.has(id);
   }
 
   private timeline(): Timeline | null {
@@ -95,6 +155,7 @@ export class ReplayRoom extends Room {
       bars.set(f.bar.t, f.bar);
     }
     const list = [...bars.values()];
+    this.price = list.at(-1)?.c ?? null;
     return {
       type: 'snapshot',
       room: meta,
@@ -181,6 +242,7 @@ export class ReplayRoom extends Room {
     }
     if (bars.size || events.length) {
       const list = [...bars.values()];
+      this.price = list.at(-1)?.c ?? this.price;
       this.broadcast({ type: 'frame', now: this.simTime, bars: list, events, price: list.at(-1)?.c ?? null });
     }
     if (this.idx >= tl.frames.length || this.simTime >= tl.endMs) {
@@ -290,6 +352,14 @@ export class LiveRoom extends Room {
       refLabel: 'vs 24 hours ago',
     });
     this.engine = new PlayEngine({ symbol: product, assetClass: 'crypto' });
+  }
+
+  stamp(): Stamp {
+    return { t: Date.now(), price: this.current?.c ?? this.bars.at(-1)?.c ?? null };
+  }
+
+  hasPlay(id: string): boolean {
+    return this.plays.has(id);
   }
 
   protected override onJoin() {
@@ -427,13 +497,32 @@ export class RoomHub {
       } catch {
         return;
       }
-      if (msg.type === 'join') {
-        client.room?.leave(client);
-        const room = this.room(msg.room);
-        if (!room) return send(ws, { type: 'error', message: `No room called "${msg.room}".` });
-        room.join(client);
-      } else if (msg.type === 'control') {
-        client.room?.control(msg.action, msg.value);
+      switch (msg.type) {
+        case 'hello':
+          // No accounts yet: a random id from the browser plus a display name. Everything a
+          // comment is scored on (time, price) is stamped here on the server, not by the client.
+          if (typeof msg.userId === 'string' && /^[\w-]{8,64}$/.test(msg.userId)) client.userId = msg.userId;
+          client.name = cleanName(msg.name);
+          if (msg.name && !client.name) {
+            send(ws, { type: 'rejected', reason: 'Names are 2–20 letters, numbers, spaces, dots or dashes.' });
+          }
+          break;
+        case 'join': {
+          client.room?.leave(client);
+          const room = this.room(msg.room);
+          if (!room) return send(ws, { type: 'error', message: `No room called "${msg.room}".` });
+          room.join(client);
+          break;
+        }
+        case 'control':
+          client.room?.control(msg.action, msg.value);
+          break;
+        case 'react':
+        case 'comment':
+        case 'thread':
+        case 'report':
+          client.room?.handleSocial(client, msg);
+          break;
       }
     });
     ws.on('close', () => client.room?.leave(client));

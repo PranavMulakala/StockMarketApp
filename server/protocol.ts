@@ -71,10 +71,101 @@ export interface ErrorMsg {
   message: string;
 }
 
-export type ServerMsg = SnapshotMsg | FrameMsg | StateMsg | ErrorMsg;
+// ── social layer: every play is its own conversation ──────────────────────
+
+/** Where the poster stands. Shown on every comment; it is what calls get scored on later. */
+export type Stance = 'long' | 'short' | 'flat' | 'none';
+
+export const REACTIONS = ['🔥', '🚀', '📉', '😱', '🤡', '💀'] as const;
+export type Reaction = (typeof REACTIONS)[number];
+
+export interface Comment {
+  id: string;
+  playId: string;
+  userId: string;
+  name: string;
+  text: string;
+  stance: Stance;
+  /**
+   * Stamped by the server, never the client: the room's clock (replay time in replays) and the
+   * room's price at the instant the comment was posted.
+   */
+  t: number;
+  price: number | null;
+  /** Wall-clock time it was posted. */
+  at: number;
+}
+
+export interface PlaySocial {
+  /** Reaction → the user ids who gave it. */
+  reactions: Partial<Record<Reaction, string[]>>;
+  comments: number;
+}
+
+export interface SocialMsg {
+  type: 'social';
+  plays: Record<string, PlaySocial>;
+  here: number;
+}
+
+export interface ReactedMsg {
+  type: 'reacted';
+  playId: string;
+  social: PlaySocial;
+}
+
+export interface CommentMsg {
+  type: 'comment';
+  comment: Comment;
+  social: PlaySocial;
+}
+
+export interface ThreadMsg {
+  type: 'thread';
+  playId: string;
+  comments: Comment[];
+}
+
+export interface HiddenMsg {
+  type: 'hidden';
+  playId: string;
+  commentId: string;
+  social: PlaySocial;
+}
+
+export interface PresenceMsg {
+  type: 'presence';
+  here: number;
+}
+
+/** A post the server refused (moderation, rate limit), sent only to the poster. */
+export interface RejectedMsg {
+  type: 'rejected';
+  reason: string;
+}
+
+export type ServerMsg =
+  | SnapshotMsg
+  | FrameMsg
+  | StateMsg
+  | ErrorMsg
+  | SocialMsg
+  | ReactedMsg
+  | CommentMsg
+  | ThreadMsg
+  | HiddenMsg
+  | PresenceMsg
+  | RejectedMsg;
 
 export type ControlAction = 'play' | 'pause' | 'speed' | 'restart' | 'seek' | 'next';
 
-export type ClientMsg = { type: 'join'; room: string } | { type: 'control'; action: ControlAction; value?: number };
+export type ClientMsg =
+  | { type: 'hello'; userId: string; name: string | null }
+  | { type: 'join'; room: string }
+  | { type: 'control'; action: ControlAction; value?: number }
+  | { type: 'react'; playId: string; reaction: Reaction }
+  | { type: 'comment'; playId: string; text: string; stance: Stance }
+  | { type: 'thread'; playId: string }
+  | { type: 'report'; commentId: string };
 
 export const SPEEDS = [1, 10, 30, 60, 120] as const;
