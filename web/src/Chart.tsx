@@ -16,8 +16,8 @@ import {
 import { tierOf, type Bar, type Play } from '../../engine';
 import { clockMin } from './fmt';
 
-const UP = '#22c55e';
-const DOWN = '#f43f5e';
+const UP = '#30d158';
+const DOWN = '#ff453a';
 export const TIER_COLOR = {
   minor: '#64748b',
   notable: '#60a5fa',
@@ -31,7 +31,7 @@ const toCandle = (b: Bar) => ({ time: ts(b.t), open: b.o, high: b.h, low: b.l, c
 const toVolume = (b: Bar) => ({
   time: ts(b.t),
   value: b.v,
-  color: b.c >= b.o ? 'rgba(34,197,94,0.32)' : 'rgba(244,63,94,0.32)',
+  color: b.c >= b.o ? 'rgba(48,209,88,0.3)' : 'rgba(255,69,58,0.3)',
 });
 
 interface Api {
@@ -52,7 +52,7 @@ export function Chart({ bars, plays, version, focus }: { bars: Bar[]; plays: Pla
       autoSize: true,
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
-        textColor: '#8b95a5',
+        textColor: '#8e8e93',
         fontFamily: 'inherit',
         attributionLogo: true,
       },
@@ -111,7 +111,7 @@ export function Chart({ bars, plays, version, focus }: { bars: Bar[]; plays: Pla
     if (!a) return;
     const first = bars[0]?.t ?? 0;
     const markers: SeriesMarker<Time>[] = plays
-      .filter((p) => p.kind !== 'bell' && p.kind !== 'event' && p.barT >= first)
+      .filter((p) => p.kind !== 'bell' && p.kind !== 'event' && p.kind !== 'candle' && p.barT >= first)
       .map((p) => ({
         time: ts(p.barT),
         position: p.dir < 0 ? 'aboveBar' : 'belowBar',

@@ -5,6 +5,7 @@ import { CoinbaseFeed } from './coinbase';
 import { finalPlays, loadScenarios, timelineFor, type Scenario, type Timeline } from './replay';
 import { cleanName } from './moderation';
 import { SocialStore, type Stamp } from './social';
+import { PICK_WINDOW, PickBook } from './picks';
 import {
   SPEEDS,
   type ClientMsg,
@@ -29,7 +30,7 @@ function send(ws: WebSocket, msg: ServerMsg) {
   if (ws.readyState === 1) ws.send(JSON.stringify(msg));
 }
 
-type SocialClientMsg = Extract<ClientMsg, { type: 'react' | 'comment' | 'thread' | 'report' }>;
+type SocialClientMsg = Extract<ClientMsg, { type: 'react' | 'comment' | 'thread' | 'report' | 'pick' }>;
 
 /**
  * A room is one "game": everyone in it sees the same price, the same plays, at the same moment, and
@@ -38,6 +39,7 @@ type SocialClientMsg = Extract<ClientMsg, { type: 'react' | 'comment' | 'thread'
 export abstract class Room {
   readonly clients = new Set<Client>();
   readonly social = new SocialStore();
+  readonly picks = new PickBook();
 
   constructor(readonly meta: RoomMeta) {}
 
@@ -46,6 +48,7 @@ export abstract class Room {
     c.room = this;
     send(c.ws, this.snapshot());
     send(c.ws, { type: 'social', plays: this.social.all(), here: this.clients.size });
+    send(c.ws, { type: 'picks', markets: this.picks.all(), leaderboard: this.picks.leaderboard() });
     this.broadcast({ type: 'presence', here: this.clients.size });
     this.onJoin();
   }
@@ -82,6 +85,12 @@ export abstract class Room {
       return;
     }
     if (!this.hasPlay(msg.playId)) return send(c.ws, { type: 'rejected', reason: 'That play is not in this room.' });
+    if (msg.type === 'pick') {
+      const name = c.name ?? `guest-${c.userId.slice(0, 4)}`;
+      const res = this.picks.pick(msg.playId, c.userId, name, msg.side, this.stamp().t);
+      if (typeof res === 'string') return send(c.ws, { type: 'rejected', reason: res });
+      return this.broadcast({ type: 'picks', markets: [res], leaderboard: this.picks.leaderboard() });
+    }
     if (msg.type === 'thread') {
       return send(c.ws, { type: 'thread', playId: msg.playId, comments: this.social.thread(msg.playId) });
     }
@@ -99,6 +108,19 @@ export abstract class Room {
     this.broadcast({ type: 'comment', comment: posted.comment, social: this.social.social(msg.playId) });
   }
 
+  /** Every engine event passes through here: a closed candle settles the last pick and opens the next. */
+  protected onEvents(events: EngineEvent[]) {
+    const changed = events
+      .filter((e) => e.type === 'play' && e.play.kind === 'candle')
+      .flatMap((e) => this.picks.onCandle(e.play, this.pickWindow()));
+    if (changed.length) this.broadcast({ type: 'picks', markets: changed, leaderboard: this.picks.leaderboard() });
+  }
+
+  /** How long (room clock) a candle's pick stays open. */
+  protected pickWindow(): number {
+    return PICK_WINDOW;
+  }
+
   abstract snapshot(): SnapshotMsg;
   control(_action: ControlAction, _value?: number): void {}
   protected onJoin(): void {}
@@ -113,7 +135,7 @@ export class ReplayRoom extends Room {
   private idx = 0;
   private simTime = 0;
   private playing = false;
-  private speed = 30;
+  private speed = 10;
   private timer: ReturnType<typeof setInterval> | null = null;
   private lastReal = 0;
   private started = false;
@@ -127,6 +149,11 @@ export class ReplayRoom extends Room {
 
   stamp(): Stamp {
     return { t: this.simTime, price: this.price };
+  }
+
+  /** Sped-up replays still leave ~20 real seconds to pick, but never past 3:20 into the candle. */
+  protected override pickWindow(): number {
+    return Math.min(200_000, Math.max(PICK_WINDOW, 20_000 * this.speed));
   }
 
   hasPlay(id: string): boolean {
@@ -244,6 +271,7 @@ export class ReplayRoom extends Room {
       const list = [...bars.values()];
       this.price = list.at(-1)?.c ?? this.price;
       this.broadcast({ type: 'frame', now: this.simTime, bars: list, events, price: list.at(-1)?.c ?? null });
+      this.onEvents(events);
     }
     if (this.idx >= tl.frames.length || this.simTime >= tl.endMs) {
       this.simTime = tl.endMs;
@@ -421,6 +449,7 @@ export class LiveRoom extends Room {
       this.pendingEvents.push(e);
       this.plays.set(e.play.id, e.play);
     }
+    this.onEvents(events);
     if (this.plays.size > 300) {
       const oldest = [...this.plays.values()].sort((a, b) => a.t - b.t).slice(0, this.plays.size - 300);
       for (const p of oldest) this.plays.delete(p.id);
@@ -521,6 +550,7 @@ export class RoomHub {
         case 'comment':
         case 'thread':
         case 'report':
+        case 'pick':
           client.room?.handleSocial(client, msg);
           break;
       }

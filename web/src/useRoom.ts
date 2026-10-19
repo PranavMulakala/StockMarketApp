@@ -5,11 +5,14 @@ import type {
   Comment,
   ControlAction,
   LiveState,
+  PickMarket,
   PlaySocial,
   Reaction,
   ReplayState,
   RoomMeta,
+  Score,
   ServerMsg,
+  Side,
   Stance,
 } from '../../server/protocol';
 import { loadIdentity, saveIdentity, type Identity } from './identity';
@@ -36,6 +39,9 @@ export interface RoomState {
   /** Loaded threads, newest comment first. */
   threads: Record<string, Comment[]>;
   here: number;
+  /** Next-candle pick markets by candle play id, and the room's leaderboard. */
+  markets: Record<string, PickMarket>;
+  leaderboard: Score[];
   /** The server's latest refusal of something this browser posted. */
   rejected?: { reason: string; at: number };
 }
@@ -55,6 +61,8 @@ const initial: RoomState = {
   social: {},
   threads: {},
   here: 0,
+  markets: {},
+  leaderboard: [],
 };
 
 function upsertBars(bars: Bar[], incoming: Bar[]): Bar[] {
@@ -148,6 +156,11 @@ function reducer(s: RoomState, a: Action): RoomState {
         threads: thread ? { ...s.threads, [m.playId]: thread.filter((c) => c.id !== m.commentId) } : s.threads,
       };
     }
+    case 'picks': {
+      const markets = { ...s.markets };
+      for (const mk of m.markets) markets[mk.playId] = mk;
+      return { ...s, markets, leaderboard: m.leaderboard };
+    }
     case 'rejected':
       return { ...s, rejected: { reason: m.reason, at: receivedAt } };
   }
@@ -204,6 +217,7 @@ export function useRoom(id: string) {
     comment: (playId: string, text: string, stance: Stance) => send({ type: 'comment', playId, text, stance }),
     openThread: (playId: string) => send({ type: 'thread', playId }),
     report: (commentId: string) => send({ type: 'report', commentId }),
+    pick: (playId: string, side: Side) => send({ type: 'pick', playId, side }),
     setName: (name: string) => {
       const next = { ...identityRef.current, name };
       saveIdentity(next);

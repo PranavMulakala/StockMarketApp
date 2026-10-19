@@ -44,7 +44,7 @@ describe('move rating', () => {
 describe('PlayEngine', () => {
   it('stays quiet on an ordinary day', () => {
     const e = engine();
-    const found = plays(feed(e, quietDay(DAY, 100, 11))).filter((p) => p.kind !== 'bell');
+    const found = plays(feed(e, quietDay(DAY, 100, 11))).filter((p) => p.kind !== 'bell' && p.kind !== 'candle');
     expect(found.length).toBeLessThanOrEqual(12);
     expect(Math.max(0, ...found.map((p) => p.rating))).toBeLessThan(6);
   });
@@ -173,6 +173,20 @@ describe('PlayEngine', () => {
     const moves = plays(evs).filter((x) => x.kind === 'move');
     expect(moves).toHaveLength(1);
     expect(moves[0]!.t).toBe(t + 20_000); // called 20 seconds into the minute
+  });
+
+  it('turns every five minutes into a candle play with the real OHLC', () => {
+    const e = engine();
+    const day = before(quietDay(DAY, 100, 61), DAY, '10:30');
+    const candles = plays(feed(e, day)).filter((p) => p.kind === 'candle');
+    const regular = candles.filter((p) => p.session === 'regular');
+    expect(regular).toHaveLength(12); // 9:30–10:30
+    const k = regular[0]!.candle!;
+    const five = day.filter((b) => b.t >= k.start && b.t < k.start + 5 * 60_000);
+    expect(k.o).toBe(five[0]!.o);
+    expect(k.c).toBe(five.at(-1)!.c);
+    expect(k.h).toBe(Math.max(...five.map((b) => b.h)));
+    expect(regular[0]!.title).toMatch(/candle: TEST [+−]/);
   });
 
   it('works around the clock for crypto, with no bells', () => {

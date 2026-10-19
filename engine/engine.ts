@@ -189,6 +189,7 @@ export class PlayEngine {
   private major: Major | null = null;
   private run: Run | null = null;
   private lastVolumeT = -Infinity;
+  private readonly maxCandleRange = new Map<Session, number>();
   private readonly firedInBar = new Map<string, number>();
   private seq = 0;
   private silent = false;
@@ -237,7 +238,10 @@ export class PlayEngine {
     this.rollDay(bar.t);
     this.contextPlays(bar, session, final, t, out);
     const ctx = this.ctx(bar, session, final, t);
-    if (this.ready(ctx.group)) this.detect(ctx, out);
+    if (this.ready(ctx.group)) {
+      this.detect(ctx, out);
+      if (final) this.candlePlay(ctx, out);
+    }
     if (final) this.commit(bar, session);
     return this.silent ? [] : out;
   }
@@ -835,6 +839,66 @@ export class PlayEngine {
     if (this.push(out, play)) this.lastVolumeT = c.now;
   }
 
+  // ── the five-minute candle: something to react to every five minutes ─────
+
+  /**
+   * Every five minutes the candle that just closed becomes a play, big or small, like a possession
+   * in a game. Big plays still interrupt; candles keep the room moving between them and carry the
+   * "next five minutes: higher or lower?" pick.
+   */
+  private candlePlay(c: Ctx, out: EngineEvent[]) {
+    const minute = this.asset === 'crypto' ? Math.floor(c.bar.t / MIN) % 1440 : etMinuteOfDay(c.bar.t);
+    if ((minute + 1) % 5 !== 0) return;
+    const start = c.bar.t - 4 * MIN;
+    const bars = [...this.history.filter((b) => b.t >= start && b.t < c.bar.t), c.bar];
+    const first = bars[0]!;
+    const k = {
+      start,
+      o: first.o,
+      h: Math.max(...bars.map((b) => b.h)),
+      l: Math.min(...bars.map((b) => b.l)),
+      c: c.bar.c,
+      v: bars.reduce((s, b) => s + b.v, 0),
+    };
+    const pct = pctChange(k.o, k.c);
+    const z = Math.abs(Math.log(k.c / k.o)) / this.vol[c.group].sigma(5, c.shape.vol);
+    const exp = this.volume[c.group].expected(c.shape.volume);
+    const volMult = exp ? k.v / (exp * bars.length) : null;
+    const range = k.h - k.l;
+    const biggest = range > (this.maxCandleRange.get(c.session) ?? 0) && (this.sessionBars.get(c.session) ?? 0) >= 15;
+    this.maxCandleRange.set(c.session, Math.max(range, this.maxCandleRange.get(c.session) ?? 0));
+    const { rating, parts } = this.rate({ z, pct, volMult, novelty: biggest ? 0.6 : 0, context: c.context });
+    const a = Math.abs(pct);
+    const shape =
+      a < 0.03
+        ? 'Flat candle'
+        : z >= 3 && a >= c.pctMin
+          ? pct > 0
+            ? 'Big green candle'
+            : 'Big red candle'
+          : pct > 0
+            ? 'Green candle'
+            : 'Red candle';
+    this.push(
+      out,
+      this.make('candle', c.bar, c.session, c.now, k.c, {
+        dir: a < 0.03 ? 0 : sign(pct),
+        rating,
+        parts,
+        title: `${shape}: ${this.symbol} ${fmtPct(pct)} to ${fmtPrice(k.c)}`,
+        factors: [
+          `Range ${fmtPrice(range)}`,
+          volMult ? `${fmtMult(volMult)} normal volume` : undefined,
+          biggest ? 'Biggest 5-min candle of the session' : undefined,
+          c.ctxFactor,
+        ].filter(isStr),
+        pct: round2(pct),
+        minutes: 5,
+        candle: k,
+      }),
+    );
+  }
+
   // ── bookkeeping ──────────────────────────────────────────────────────────
 
   private volMult(afterT: number, c: Ctx, exp = this.volume[c.group].expected(c.shape.volume)): number | null {
@@ -877,6 +941,7 @@ export class PlayEngine {
     this.highs.clear();
     this.lows.clear();
     this.sessionBars.clear();
+    this.maxCandleRange.clear();
     this.bells.clear();
     this.lastBreakT.clear();
     this.regularHighBroken = false;
@@ -909,7 +974,7 @@ export class PlayEngine {
   }
 
   private push(out: EngineEvent[], play: Play, type: 'play' | 'update' = 'play'): boolean {
-    const contextual = play.kind === 'bell' || play.kind === 'event';
+    const contextual = play.kind === 'bell' || play.kind === 'event' || play.kind === 'candle';
     if (type === 'play' && !contextual && play.rating < this.minRating) return false;
     out.push({ type, play: { ...play, factors: [...play.factors], parts: play.parts ? { ...play.parts } : undefined } });
     return true;
@@ -929,6 +994,7 @@ export class PlayEngine {
       parts?: RatingParts;
       pct?: number;
       minutes?: number;
+      candle?: Play['candle'];
     },
   ): Play {
     return {

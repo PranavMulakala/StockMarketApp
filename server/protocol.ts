@@ -138,6 +138,38 @@ export interface PresenceMsg {
   here: number;
 }
 
+// ── picks: "next five minutes, higher or lower?" for points (no money, ever) ─
+
+export type Side = 'up' | 'down';
+
+export interface PickMarket {
+  /** The candle play the pick hangs on; it resolves against that candle's close. */
+  playId: string;
+  base: number;
+  /** Room clock after which picks are locked. */
+  lockAt: number;
+  up: string[];
+  down: string[];
+  outcome?: Side | 'flat';
+  /** The close it resolved against. */
+  settle?: number;
+}
+
+export interface Score {
+  userId: string;
+  name: string;
+  points: number;
+  correct: number;
+  total: number;
+  streak: number;
+}
+
+export interface PicksMsg {
+  type: 'picks';
+  markets: PickMarket[];
+  leaderboard: Score[];
+}
+
 /** A post the server refused (moderation, rate limit), sent only to the poster. */
 export interface RejectedMsg {
   type: 'rejected';
@@ -155,6 +187,7 @@ export type ServerMsg =
   | ThreadMsg
   | HiddenMsg
   | PresenceMsg
+  | PicksMsg
   | RejectedMsg;
 
 export type ControlAction = 'play' | 'pause' | 'speed' | 'restart' | 'seek' | 'next';
@@ -166,6 +199,7 @@ export type ClientMsg =
   | { type: 'react'; playId: string; reaction: Reaction }
   | { type: 'comment'; playId: string; text: string; stance: Stance }
   | { type: 'thread'; playId: string }
-  | { type: 'report'; commentId: string };
+  | { type: 'report'; commentId: string }
+  | { type: 'pick'; playId: string; side: Side };
 
 export const SPEEDS = [1, 10, 30, 60, 120] as const;

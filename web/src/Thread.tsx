@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Play } from '../../engine';
-import type { Comment, PlaySocial, Reaction, Stance } from '../../server/protocol';
+import type { Comment, PickMarket, PlaySocial, Reaction, Side, Stance } from '../../server/protocol';
 import { PlayCard } from './Feed';
 import { clockSec, money, signedPct } from './fmt';
 import { loadMuted, saveMuted } from './identity';
@@ -24,6 +24,9 @@ function sinceCall(c: Comment, price: number | null): number | null {
 export function Thread({
   play,
   social,
+  market,
+  clock,
+  onPick,
   comments,
   me,
   name,
@@ -37,6 +40,9 @@ export function Thread({
 }: {
   play: Play;
   social?: PlaySocial;
+  market?: PickMarket;
+  clock: number;
+  onPick: (playId: string, side: Side) => void;
   comments?: Comment[];
   me: string;
   name: string | null;
@@ -80,7 +86,7 @@ export function Thread({
         </span>
       </div>
       <ol className="feed thread-play">
-        <PlayCard play={play} social={social} me={me} onReact={onReact} />
+        <PlayCard play={play} social={social} market={market} me={me} clock={clock} onReact={onReact} onPick={onPick} />
       </ol>
 
       {!name ? (

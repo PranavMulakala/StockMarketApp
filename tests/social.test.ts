@@ -1,3 +1,5 @@
+import type { Play } from '../engine';
+import { PICK_WINDOW, PickBook } from '../server/picks';
 import { describe, expect, it } from 'vitest';
 import { cleanName, screenComment } from '../server/moderation';
 import { SocialStore } from '../server/social';
@@ -76,5 +78,48 @@ describe('SocialStore', () => {
     expect(s.report(r.comment.id, 'u4')?.id).toBe(r.comment.id);
     expect(s.thread('p1')).toHaveLength(0);
     expect(s.social('p1').comments).toBe(0);
+  });
+});
+
+const candle = (id: string, t: number, c: number): Play => ({
+  id,
+  symbol: 'TEST',
+  kind: 'candle',
+  dir: 0,
+  rating: 2,
+  title: '',
+  factors: [],
+  t,
+  price: c,
+  barT: t,
+  session: 'regular',
+  revision: 0,
+  candle: { start: t - 300_000, o: c, h: c, l: c, c, v: 1 },
+});
+
+describe('PickBook', () => {
+  it('opens a market on each candle and settles it on the next close, with streak points', () => {
+    const b = new PickBook();
+    b.onCandle(candle('k1', 1_000, 100));
+    expect(b.pick('k1', 'u1', 'ann', 'up', 2_000)).not.toBeTypeOf('string');
+    expect(b.pick('k1', 'u2', 'bob', 'down', 2_000)).not.toBeTypeOf('string');
+    const changed = b.onCandle(candle('k2', 301_000, 101));
+    expect(changed.find((m) => m.playId === 'k1')?.outcome).toBe('up');
+    b.pick('k2', 'u1', 'ann', 'up', 302_000);
+    b.onCandle(candle('k3', 601_000, 102));
+    const [first, second] = b.leaderboard();
+    expect(first).toMatchObject({ name: 'ann', points: 25, correct: 2, total: 2, streak: 2 });
+    expect(second).toMatchObject({ name: 'bob', points: 0, correct: 0, total: 1, streak: 0 });
+  });
+
+  it('locks picks after the window and treats a flat candle as a push', () => {
+    const b = new PickBook();
+    b.onCandle(candle('k1', 0, 100));
+    expect(b.pick('k1', 'u1', 'ann', 'up', PICK_WINDOW + 1)).toMatch(/locked/);
+    b.pick('k1', 'u2', 'bob', 'down', 10);
+    b.onCandle(candle('k2', 300_000, 100));
+    expect(b.all()[0]!.outcome).toBe('flat');
+    expect(b.leaderboard()).toHaveLength(0);
+    expect(b.pick('k1', 'u2', 'bob', 'up', 20)).toMatch(/settled/);
   });
 });

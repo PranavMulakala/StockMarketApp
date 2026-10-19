@@ -22,7 +22,8 @@ export type PlayKind =
   | 'run' // many straight minutes in one direction
   | 'fade' // giving back a big move
   | 'bell' // opening bell, closing bell, after-hours wrap
-  | 'event'; // a scheduled event: earnings out, Fed decision, CPI
+  | 'event' // a scheduled event: earnings out, Fed decision, CPI
+  | 'candle'; // every five minutes: the candle that just closed, big or small (the "possession")
 
 export interface RatingParts {
   size: number;
@@ -56,6 +57,8 @@ export interface Play {
   endPrice?: number;
   updatedAt?: number;
   parts?: RatingParts;
+  /** For candle plays: the five-minute candle itself. */
+  candle?: { start: number; o: number; h: number; l: number; c: number; v: number };
   /** Bumped each time an in-progress play grows. */
   revision: number;
 }

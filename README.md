@@ -46,6 +46,21 @@ the same moment.
 - Reactions and comments live in memory (`server/social.ts`) behind a small interface, ready for a
   database.
 
+## Polish pass: always something to react to
+
+- **Five-minute candles are plays.** Every five minutes the candle that just closed lands in the
+  feed, big or small, like a possession in a game. Big plays still interrupt, and the candles keep
+  the room moving between them.
+- **Call the next candle.** On every candle: "Next 5 min: higher or lower than $X?" It's for points
+  only, with no money and no prizes.
+  - A right call scores 10 points, plus 5 for each call in a row after that.
+  - A flat candle is a push.
+  - Picks lock 2.5 minutes in (sped-up replays leave about 20 real seconds).
+  - The room leaderboard ranks by points, then accuracy.
+- **Real-style look.** Pure black, a game header (the ticker is the team, the price is the score,
+  the session is the clock), feed tabs for Live, Top and Picks, and reactions that float up when
+  other people tap them.
+
 ## Run it
 
 ```bash
