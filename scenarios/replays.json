@@ -1,0 +1,53 @@
+[
+  {
+    "id": "nvda-earnings-2026-08-26",
+    "symbol": "NVDA",
+    "name": "NVIDIA",
+    "date": "2026-08-26",
+    "kind": "earnings",
+    "title": "NVIDIA earnings night",
+    "subtitle": "Q2 FY2027 results after the bell",
+    "note": "Reported EPS $2.22 vs $2.09 expected.",
+    "start": "15:30",
+    "end": "18:30",
+    "events": [{ "time": "16:00", "kind": "earnings", "title": "NVIDIA earnings are due after the bell" }]
+  },
+  {
+    "id": "nvda-open-2026-08-27",
+    "symbol": "NVDA",
+    "name": "NVIDIA",
+    "date": "2026-08-27",
+    "kind": "session",
+    "title": "NVIDIA, the morning after",
+    "subtitle": "Pre-market into the opening bell after earnings",
+    "start": "09:00",
+    "end": "11:30",
+    "events": []
+  },
+  {
+    "id": "tsla-earnings-2026-07-22",
+    "symbol": "TSLA",
+    "name": "Tesla",
+    "date": "2026-07-22",
+    "kind": "earnings",
+    "title": "Tesla earnings night",
+    "subtitle": "Q2 2026 results after the bell",
+    "note": "Reported EPS $0.33 vs $0.32 expected.",
+    "start": "15:30",
+    "end": "18:30",
+    "events": [{ "time": "16:00", "kind": "earnings", "title": "Tesla earnings are due after the bell" }]
+  },
+  {
+    "id": "nflx-earnings-2026-07-16",
+    "symbol": "NFLX",
+    "name": "Netflix",
+    "date": "2026-07-16",
+    "kind": "earnings",
+    "title": "Netflix earnings night",
+    "subtitle": "Q2 2026 results after the bell",
+    "note": "Reported EPS $0.80 vs $0.79 expected.",
+    "start": "15:30",
+    "end": "18:00",
+    "events": [{ "time": "16:00", "kind": "earnings", "title": "Netflix earnings are due after the bell" }]
+  }
+]

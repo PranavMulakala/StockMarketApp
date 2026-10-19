@@ -1,0 +1,28 @@
+# dependencies / build
+node_modules/
+dist/
+dist-ssr/
+.venv/
+
+# secrets — never commit
+.env*
+secrets/
+*.pem
+*.key
+credentials*
+
+# scratch / working output
+scratch/
+
+# editor / OS
+.DS_Store
+*.log
+.vscode/
+.idea/
+
+# market data cache: personal-use licensed data, never commit or push
+data/
+
+# machine-specific rules for the work Mac this is built on: kept local, never pushed
+CLAUDE.md
+.claude/
